@@ -486,8 +486,11 @@ function renderReader() {
   fastReadFlag = false;
   const subj = curSubj, sec = subj.sections[curSecIdx];
   const wordCount = sec.clauses.reduce((n, c) => n + (c.label + " " + c.text).split(/\s+/).length, 0);
-  const timerDuration = Math.min(120, Math.max(30, Math.ceil(wordCount / 200) * 60));
+  const timerDuration = Math.min(80, Math.max(30, Math.ceil(wordCount / 200) * 60));
   const already = secStatus(subj.id, sec.id) === "complete";
+  const sdExisting = secData(subj.id, sec.id);
+  const hasPriorAttempt = !!(sdExisting && (sdExisting.attempts || []).length > 0);
+  const skipLock = already || hasPriorAttempt;
 
   const clauses = sec.clauses.map(c => `<div class="clause-block">
     <div class="clause-label">${esc(c.label)}</div><p>${esc(c.text)}</p>
@@ -501,7 +504,7 @@ function renderReader() {
     <div class="reader-body" id="reader-body">${clauses}</div>
     <div class="timer-banner" id="timer-banner">
       <span id="timer-msg">Read through this section carefully. Comprehension check unlocks in <strong id="timer-n">${timerDuration}</strong>s</span>
-      <button class="btn btn-primary" id="quiz-btn" ${already ? "" : "disabled"}>Take comprehension check →</button>
+      <button class="btn btn-primary" id="quiz-btn" ${skipLock ? "" : "disabled"}>Take comprehension check →</button>
     </div>`;
 
   const readStart = Date.now();
@@ -517,6 +520,8 @@ function renderReader() {
   let left = timerDuration;
   if (already) {
     $("#timer-msg").innerHTML = `You've already passed this section — review freely or retake the check.`;
+  } else if (hasPriorAttempt) {
+    $("#timer-msg").innerHTML = `You've attempted this section before — retake the check whenever you're ready.`;
   } else {
     readTimerInt = setInterval(() => {
       left--;
@@ -716,6 +721,12 @@ function setTab(t) { adminTab = t; renderAdmin(); }
 
 /* ---- members tab ---- */
 function totalSections() { return SUBJECTS.reduce((n,s)=>n+s.sections.length,0); }
+function fmtTime(s) {
+  s = Math.round(s || 0);
+  if (s < 60) return s + "s";
+  const m = Math.floor(s / 60), r = s % 60;
+  return r ? `${m}m ${r}s` : `${m}m`;
+}
 
 function memberStats(m) {
   let passed = 0, attempts = 0, time = 0, last = m.lastActive || 0, fast = false;
@@ -747,7 +758,7 @@ function renderMembersTab() {
       <td><span class="minibar"><div style="width:${total?Math.round(s.passed/total*100):0}%"></div></span>${s.passed}/${total}</td>
       <td>${chip}</td>
       <td>${s.attempts}</td>
-      <td>${Math.round(s.time/60)}m</td>
+      <td>${fmtTime(s.time)}</td>
       <td style="font-size:12px;color:var(--muted)">${s.last ? new Date(s.last).toLocaleString() : "—"}</td>
       <td><button class="del-x" onclick="event.stopPropagation();delMember('${esc(m.email)}')" title="Delete member">✕</button></td>
     </tr>`;
@@ -785,7 +796,7 @@ function openDetail(i) {
     const chip = st === "complete" ? `<span class="chip green">Complete</span>` : st === "in-progress" ? `<span class="chip amber">In progress</span>` : `<span class="chip grey">—</span>`;
     const atts = d?.attempts || [];
     const lastAtt = atts.length ? new Date(atts[atts.length-1].ts).toLocaleString() : "—";
-    rows.push(`<tr><td>${esc(sec.title)}</td><td>${chip}</td><td>${d?d.bestScore:0}${atts.length?"/"+(atts[atts.length-1].total||"?"):""}</td><td>${atts.length}</td><td>${d?Math.round((d.timeSpentSeconds||0)/60)+"m":"—"}</td><td style="font-size:11.5px">${lastAtt}</td></tr>`);
+    rows.push(`<tr><td>${esc(sec.title)}</td><td>${chip}</td><td>${d?d.bestScore:0}${atts.length?"/"+(atts[atts.length-1].total||"?"):""}</td><td>${atts.length}</td><td>${d?fmtTime(d.timeSpentSeconds||0):"—"}</td><td style="font-size:11.5px">${lastAtt}</td></tr>`);
     if (atts.length) {
       const inner = atts.map((a, ai) => {
         const qr = (a.questionResults||[]).map((q, qi) =>
